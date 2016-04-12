@@ -34,7 +34,7 @@
 function I8080(memory, io) {
   this.sp = 0;
   this.pc = 0;
-  this.iff = 0;
+  this.iff = false;
 
   this.sf = 0;
   this.pf = 0;
@@ -401,7 +401,6 @@ function I8080(memory, io) {
       case 0x1D:            /* dcr e */
       case 0x25:            /* dcr h */
       case 0x2D:            /* dcr l */
-      case 0x35:            /* dcr m */
       case 0x3D:            /* dcr a */
           tstates = [5];
           cpu_cycles = 5;
@@ -645,7 +644,10 @@ function I8080(memory, io) {
           break;
 
       case 0x76:            /* hlt */
-          tstates = [4];
+          // it should be this:
+		  // tstates = [4, 3];
+          // cpu_cycles = 7;
+		  tstates = [4];
           cpu_cycles = 4;
           this.pc = (this.pc - 1) & 0xffff;
           break;
@@ -787,7 +789,6 @@ function I8080(memory, io) {
           this.cmp(r);
           break;
       case 0xBE:            /* cmp m */
-      case 0xBF:            /* cmp a */
           r = opcode & 0x07;
           tstates = [4, 3];         
           cpu_cycles = 7;
