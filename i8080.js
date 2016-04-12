@@ -825,8 +825,8 @@ function I8080(memory, io) {
       case 0xE1:            /* pop h */
       case 0xF1:            /* pop psw */
           r = (opcode & 0x30) >> 3;
-          tstates = [5, 3, 3];
-          cpu_cycles = 11;
+          tstates = [4, 3, 3];
+          cpu_cycles = 10;
           w16 = this.pop();
           if (r != 6) {
             this.set_rp(r, w16);
