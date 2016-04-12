@@ -421,7 +421,6 @@ function I8080(memory, io) {
       case 0x1E:            /* mvi e, data8 */
       case 0x26:            /* mvi h, data8 */
       case 0x2E:            /* mvi l, data8 */
-      case 0x36:            /* mvi m, data8 */
       case 0x3E:            /* mvi a, data8 */
           tstates = [4, 3];
           cpu_cycles = 7;
