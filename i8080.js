@@ -51,21 +51,21 @@ function I8080(memory, io) {
 
   this.tstates = [];
 
-  this.memory_read_byte = function(addr) {
-    return this.memory.read(addr & 0xffff) & 0xff;
+  this.memory_read_byte = function(addr, stackrq) {
+    return this.memory.read(addr & 0xffff, stackrq) & 0xff;
   }
 
-  this.memory_write_byte = function(addr, w8) {
-    this.memory.write(addr & 0xffff, w8 & 0xff);
+  this.memory_write_byte = function(addr, w8, stackrq) {
+    this.memory.write(addr & 0xffff, w8 & 0xff, stackrq);
   }
 
-  this.memory_read_word = function(addr) {
-    return this.memory_read_byte(addr) | (this.memory_read_byte(addr + 1) << 8); 
+  this.memory_read_word = function(addr, stackrq) {
+    return this.memory_read_byte(addr, stackrq) | (this.memory_read_byte(addr + 1, stackrq) << 8); 
   }
 
-  this.memory_write_word = function(addr, w16) {
-    this.memory_write_byte(addr, w16 & 0xff);
-    this.memory_write_byte(addr + 1, w16 >> 8);
+  this.memory_write_word = function(addr, w16, stackrq) {
+    this.memory_write_byte(addr, w16 & 0xff, stackrq);
+    this.memory_write_byte(addr + 1, w16 >> 8, stackrq);
   }
 
   this.reg = function(r) {
@@ -302,14 +302,14 @@ function I8080(memory, io) {
   }
 
   this.pop = function() {
-    var v = this.memory_read_word(this.sp);
+    var v = this.memory_read_word(this.sp, true);
     this.sp = (this.sp + 2) & 0xffff;
     return v;
   }
 
   this.push = function(v) {
     this.sp = (this.sp - 2) & 0xffff;
-    this.memory_write_word(this.sp, v);
+    this.memory_write_word(this.sp, v, true);
   }
 
   this.rst = function(addr) {
@@ -976,8 +976,8 @@ function I8080(memory, io) {
       case 0xE3:            /* xthl */
           tstates = [4, 3, 3, 3, 5];
           cpu_cycles = 18;
-          w16 = this.memory_read_word(this.sp);
-          this.memory_write_word(this.sp, this.hl());
+          w16 = this.memory_read_word(this.sp, true);
+          this.memory_write_word(this.sp, this.hl(), true);
           this.set_l(w16 & 0xff);
           this.set_h(w16 >> 8);
           break;
