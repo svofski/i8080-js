@@ -51,6 +51,8 @@ function I8080(memory, io) {
 
   this.tstates = [];
 
+  this.last_opcode = 0;
+
   this.memory_read_byte = function(addr, stackrq) {
     return this.memory.read(addr & 0xffff, stackrq) & 0xff;
   }
@@ -92,8 +94,7 @@ function I8080(memory, io) {
     } else
       this.sp = w16;
   }
-
-  this.parity_table = [
+  I8080.prototype.parity_table = [
     1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
     0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
     0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
@@ -111,9 +112,8 @@ function I8080(memory, io) {
     0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
     1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
   ];
-
-  this.half_carry_table = [ 0, 0, 1, 0, 1, 0, 1, 1 ];
-  this.sub_half_carry_table = [ 0, 1, 1, 1, 0, 0, 0, 1 ];
+  I8080.prototype.half_carry_table = [ 0, 0, 1, 0, 1, 0, 1, 1 ];
+  I8080.prototype.sub_half_carry_table = [ 0, 1, 1, 1, 0, 0, 0, 1 ];
 
   const F_CARRY  = 0x01;
   const F_UN1    = 0x02;
@@ -182,7 +182,7 @@ function I8080(memory, io) {
     this.sf = (v & 0x80) != 0;
     this.zf = (v == 0);
     this.hf = (v & 0x0f) == 0;
-    this.pf = this.parity_table[v];
+    this.pf = I8080.prototype.parity_table[v];
   }
 
   this.dcr = function(r) {
@@ -192,7 +192,7 @@ function I8080(memory, io) {
     this.sf = (v & 0x80) != 0;
     this.zf = (v == 0);
     this.hf = !((v & 0x0f) == 0x0f);
-    this.pf = this.parity_table[v];
+    this.pf = I8080.prototype.parity_table[v];
   }
 
   this.add_im8 = function(v, carry) {
@@ -202,8 +202,8 @@ function I8080(memory, io) {
     a = w16 & 0xff;
     this.sf = (a & 0x80) != 0;
     this.zf = (a == 0);
-    this.hf = this.half_carry_table[index & 0x7];
-    this.pf = this.parity_table[a];
+    this.hf = I8080.prototype.half_carry_table[index & 0x7];
+    this.pf = I8080.prototype.parity_table[a];
     this.cf = (w16 & 0x0100) != 0;
     this.set_a(a);
   }
@@ -219,8 +219,8 @@ function I8080(memory, io) {
     a = w16 & 0xff;
     this.sf = (a & 0x80) != 0;
     this.zf = (a == 0);
-    this.hf = !this.sub_half_carry_table[index & 0x7];
-    this.pf = this.parity_table[a];
+    this.hf = !I8080.prototype.sub_half_carry_table[index & 0x7];
+    this.pf = I8080.prototype.parity_table[a];
     this.cf = (w16 & 0x0100) != 0;
     this.set_a(a);
   }
@@ -245,7 +245,7 @@ function I8080(memory, io) {
     a &= v;
     this.sf = (a & 0x80) != 0;
     this.zf = (a == 0);
-    this.pf = this.parity_table[a];
+    this.pf = I8080.prototype.parity_table[a];
     this.cf = 0;
     this.set_a(a);
   }
@@ -260,7 +260,7 @@ function I8080(memory, io) {
     this.sf = (a & 0x80) != 0;
     this.zf = (a == 0);
     this.hf = 0;
-    this.pf = this.parity_table[a];
+    this.pf = I8080.prototype.parity_table[a];
     this.cf = 0;
     this.set_a(a);
   }
@@ -275,7 +275,7 @@ function I8080(memory, io) {
     this.sf = (a & 0x80) != 0;
     this.zf = (a == 0);
     this.hf = 0;
-    this.pf = this.parity_table[a];
+    this.pf = I8080.prototype.parity_table[a];
     this.cf = 0;
     this.set_a(a);
   }
@@ -321,6 +321,25 @@ function I8080(memory, io) {
     var cpu_cycles = -1;
     var tstates;
     var r, w8, w16, direction, flags;
+
+    this.last_opcode = opcode;
+    var movtest = opcode & 0xf0;
+    if (opcode != 0x76 && (movtest == 0x40 || movtest == 0x50 || 
+      movtest == 0x60 || movtest == 0x70)) {
+      // mov, 0x40, 01dddsss
+      // ddd, sss - b, c, d, e, h, l, m, a
+      //            0  1  2  3  4  5  6  7
+          src = opcode & 7;
+          dst = (opcode >> 3) & 7;
+          if (src == 6 || dst == 6) {
+              tstates = [4, 3];
+              cpu_cycles = 7;
+          } else {
+              tstates = [5];
+              cpu_cycles = (src == 6 || dst == 6 ? 7 : 5);
+          }
+          this.set_reg(dst, this.reg(src));
+    } else {
 
     switch (opcode) {
       default:
@@ -516,7 +535,7 @@ function I8080(memory, io) {
               carry = 1;
           }
           this.add_im8(add, 0);
-          this.pf = this.parity_table[this.a()];
+          this.pf = I8080.prototype.parity_table[this.a()];
           this.cf = carry;
           break;
 
@@ -557,91 +576,7 @@ function I8080(memory, io) {
           cpu_cycles = 4;
           this.cf = !this.cf;
           break;
-
-      // mov, 0x40, 01dddsss
-      // ddd, sss - b, c, d, e, h, l, m, a
-      //            0  1  2  3  4  5  6  7
-      case 0x40:            /* mov b, b */
-      case 0x41:            /* mov b, c */
-      case 0x42:            /* mov b, d */
-      case 0x43:            /* mov b, e */
-      case 0x44:            /* mov b, h */
-      case 0x45:            /* mov b, l */
-      case 0x46:            /* mov b, m */
-      case 0x47:            /* mov b, a */
-
-      case 0x48:            /* mov c, b */
-      case 0x49:            /* mov c, c */
-      case 0x4A:            /* mov c, d */
-      case 0x4B:            /* mov c, e */
-      case 0x4C:            /* mov c, h */
-      case 0x4D:            /* mov c, l */
-      case 0x4E:            /* mov c, m */
-      case 0x4F:            /* mov c, a */
-
-      case 0x50:            /* mov d, b */
-      case 0x51:            /* mov d, c */
-      case 0x52:            /* mov d, d */
-      case 0x53:            /* mov d, e */
-      case 0x54:            /* mov d, h */
-      case 0x55:            /* mov d, l */
-      case 0x56:            /* mov d, m */
-      case 0x57:            /* mov d, a */
-
-      case 0x58:            /* mov e, b */
-      case 0x59:            /* mov e, c */
-      case 0x5A:            /* mov e, d */
-      case 0x5B:            /* mov e, e */
-      case 0x5C:            /* mov e, h */
-      case 0x5D:            /* mov e, l */
-      case 0x5E:            /* mov e, m */
-      case 0x5F:            /* mov e, a */
-
-      case 0x60:            /* mov h, b */
-      case 0x61:            /* mov h, c */
-      case 0x62:            /* mov h, d */
-      case 0x63:            /* mov h, e */
-      case 0x64:            /* mov h, h */
-      case 0x65:            /* mov h, l */
-      case 0x66:            /* mov h, m */
-      case 0x67:            /* mov h, a */
-
-      case 0x68:            /* mov l, b */
-      case 0x69:            /* mov l, c */
-      case 0x6A:            /* mov l, d */
-      case 0x6B:            /* mov l, e */
-      case 0x6C:            /* mov l, h */
-      case 0x6D:            /* mov l, l */
-      case 0x6E:            /* mov l, m */
-      case 0x6F:            /* mov l, a */
-
-      case 0x70:            /* mov m, b */
-      case 0x71:            /* mov m, c */
-      case 0x72:            /* mov m, d */
-      case 0x73:            /* mov m, e */
-      case 0x74:            /* mov m, h */
-      case 0x75:            /* mov m, l */
-      case 0x77:            /* mov m, a */
-
-      case 0x78:            /* mov a, b */
-      case 0x79:            /* mov a, c */
-      case 0x7A:            /* mov a, d */
-      case 0x7B:            /* mov a, e */
-      case 0x7C:            /* mov a, h */
-      case 0x7D:            /* mov a, l */
-      case 0x7E:            /* mov a, m */
-      case 0x7F:            /* mov a, a */
-          src = opcode & 7;
-          dst = (opcode >> 3) & 7;
-          if (src == 6 || dst == 6) {
-              tstates = [4, 3];
-              cpu_cycles = 7;
-          } else {
-              tstates = [5];
-              cpu_cycles = (src == 6 || dst == 6 ? 7 : 5);
-          }
-          this.set_reg(dst, this.reg(src));
-          break;
+      // mov group moved out of the switch
 
       case 0x76:            /* hlt */
           // it should be this:
@@ -1039,6 +974,7 @@ function I8080(memory, io) {
           this.cmp_im8(this.next_pc_byte());
           break;
     }
+    }
     this.tstates = tstates;
     return cpu_cycles;
   }
@@ -1050,4 +986,6 @@ function I8080(memory, io) {
   this.jump = function(addr) {
     this.pc = addr & 0xffff;
   }
+
+
 }
