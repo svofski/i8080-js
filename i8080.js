@@ -55,6 +55,7 @@ function I8080(memory, io) {
 
   this.last_opcode = 0;
 
+  this.initHandlers();
 
   const F_CARRY  = 0x01;
   const F_UN1    = 0x02;
@@ -331,744 +332,927 @@ const T533 = 16;
 const T53333 = 24;
 const T43335 = 24;
 
+I8080.prototype.initHandlers = function() {
+    var handler = [];
+    // nop, 0x00, 00rrr000
+    // r - 000(0) to 111(7)
+    handler[0x00] = 
+    // Undocumented NOP.
+    handler[0x08] =            /* nop */
+    handler[0x10] =            /* nop */
+    handler[0x18] =            /* nop */
+    handler[0x20] =            /* nop */
+    handler[0x28] =            /* nop */
+    handler[0x30] =            /* nop */
+    handler[0x38] =            /* nop */
+        (function(that) {
+            return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+            };
+        })(this);
+   
+    // lxi, 0x01, 00rr0001
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
+    handler[0x01] =            /* lxi b, data16 */
+    handler[0x11] =            /* lxi d, data16 */
+    handler[0x21] =            /* lxi h, data16 */
+    handler[0x31] =            /* lxi sp, data16 */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.set_rp(opcode >> 3, that.next_pc_word());
+          };
+        })(this);
+
+    // stax, 0x02, 000r0010
+    // r - 0 (bc), 1 (de)
+    handler[0x02] =            /* stax b */
+    handler[0x12] =            /* stax d */
+        (function(that) {
+                return function(opcode) {
+                  that.vcycles = T43;
+                  that.cpu_cycles = 7;
+                  that.memory_write_byte(that.rp(opcode >> 3), that.a());
+                };
+        })(this);
+
+
+    // inx, 0x03, 00rr0011
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
+    handler[0x03] =            /* inx b */
+    handler[0x13] =            /* inx d */
+    handler[0x23] =            /* inx h */
+    handler[0x33] =            /* inx sp */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              var r = opcode >> 3;
+              that.set_rp(r, (that.rp(r) + 1) & 0xffff);
+          };
+        })(this);
+
+    // inr, 0x04, 00rrr100
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x04] =            /* inr b */
+    handler[0x0C] =            /* inr c */
+    handler[0x14] =            /* inr d */
+    handler[0x1C] =            /* inr e */
+    handler[0x24] =            /* inr h */
+    handler[0x2C] =            /* inr l */
+    handler[0x3C] =            /* inr a */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              that.inr(opcode >> 3);
+          };
+        })(this);
+    handler[0x34] =            /* inr m */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.inr(opcode >> 3);
+          };
+        })(this);
+
+    // dcr, 0x05, 00rrr100
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x05] =            /* dcr b */
+    handler[0x0D] =            /* dcr c */
+    handler[0x15] =            /* dcr d */
+    handler[0x1D] =            /* dcr e */
+    handler[0x25] =            /* dcr h */
+    handler[0x2D] =            /* dcr l */
+    handler[0x3D] =            /* dcr a */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              that.dcr(opcode >> 3);
+          };
+        })(this);
+    handler[0x35] =            /* dcr m */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.dcr(opcode >> 3);
+          };
+        })(this);
+
+    // mvi, 0x06, 00rrr110
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x06] =       /* mvi b, data8 */
+    handler[0x0E] =       /* mvi c, data8 */
+    handler[0x16] =       /* mvi d, data8 */
+    handler[0x1E] =       /* mvi e, data8 */
+    handler[0x26] =       /* mvi h, data8 */
+    handler[0x2E] =       /* mvi l, data8 */
+    handler[0x3E] =       /* mvi a, data8 */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.set_reg(opcode >> 3, that.next_pc_byte());
+          };
+        })(this);
+
+    handler[0x36] =       /* mvi m, data8 */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.set_reg(opcode >> 3, that.next_pc_byte());
+          };
+        })(this);
+
+    handler[0x07] =       /* rlc */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              var a = that.a();
+              that.cf = ((a & 0x80) != 0);
+              that.set_a(((a << 1) & 0xff) | that.cf);
+          };
+        })(this);
+
+    // dad, 0x09, 00rr1001
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
+    handler[0x09] =       /* dad b */
+    handler[0x19] =       /* dad d */
+    handler[0x29] =       /* dad hl */
+    handler[0x39] =       /* dad sp */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.dad((opcode & 0x30) >> 3);
+          };
+        })(this);
+
+    // ldax, 0x0A, 000r1010
+    // r - 0 (bc), 1 (de)
+    handler[0x0A] =       /* ldax b */
+    handler[0x1A] =       /* ldax d */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              var r = (opcode & 0x10) >> 3;
+              that.set_a(that.memory_read_byte(that.rp(r)));
+          };
+        })(this);
+
+    // dcx, 0x0B, 00rr1011
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
+    handler[0x0B] =       /* dcx b */
+    handler[0x1B] =       /* dcx d */
+    handler[0x2B] =       /* dcx h */
+    handler[0x3B] =       /* dcx sp */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              var r = (opcode & 0x30) >> 3;
+              that.set_rp(r, (that.rp(r) - 1) & 0xffff);
+          };
+        })(this);
+
+    handler[0x0F] =       /* rrc */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.cf = that.a() & 0x01;
+              that.set_a((that.a() >> 1) | (that.cf << 7));
+          };
+        })(this);
+
+    handler[0x17] =       /* ral */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              var w8 = that.cf;
+              that.cf = ((that.a() & 0x80) != 0);
+              that.set_a((that.a() << 1) | w8);
+          };
+        })(this);
+
+    handler[0x1F] =        /* rar */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              var w8 = that.cf;
+              that.cf = that.a() & 0x01;
+              that.set_a((that.a() >> 1) | (w8 << 7));
+          };
+        })(this);
+
+    handler[0x22] =       /* shld addr */
+        (function(that) {
+          return function() {
+              that.vcycles = T43333;
+              that.cpu_cycles = 16;
+              var w16 = that.next_pc_word();
+              that.memory_write_byte(w16, that.l());
+              that.memory_write_byte(w16 + 1, that.h());
+          };
+        })(this);
+
+    handler[0x27] =       /* daa */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              var carry = that.cf;
+              var add = 0;
+              var a = that.a();
+              if (that.hf || (a & 0x0f) > 9) add = 0x06;
+              if (that.cf || (a >> 4) > 9 || ((a >> 4) >= 9 && (a & 0xf) > 9)) {
+                  add |= 0x60;
+                  carry = 1;
+              }
+              that.add_im8(add, 0);
+              that.pf = I8080.prototype.parity_table[that.a()];
+              that.cf = carry;
+          };
+        })(this);
+
+    handler[0x2A] =       /* lhld addr */
+        (function(that) {
+          return function() {
+              that.vcycles = T43333;
+              that.cpu_cycles = 16;
+              var w16 = that.next_pc_word();
+              that.regs[5] = that.memory_read_byte(w16);
+              that.regs[4] = that.memory_read_byte(w16 + 1);
+          };
+        })(this);
+
+    handler[0x2F] =       /* cma */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.set_a(that.a() ^ 0xff);
+          };
+        })(this);
+
+    handler[0x32] =       /* sta addr */
+        (function(that) {
+          return function() {
+              that.vcycles = T4333;
+              that.cpu_cycles = 13;
+              that.memory_write_byte(that.next_pc_word(), that.a());
+          };
+        })(this);
+
+    handler[0x37] =       /* stc */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.cf = 1;
+          };
+        })(this);
+
+    handler[0x3A] =       /* lda addr */
+        (function(that) {
+          return function() {
+              that.vcycles = T4333;
+              that.cpu_cycles = 13;
+              that.set_a(that.memory_read_byte(that.next_pc_word()));
+          };
+        })(this);
+
+    handler[0x3F] =       /* cmc */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.cf = !that.cf;
+          };
+        })(this);
+    // mov group moved out of the switch
+
+    handler[0x76] =       /* hlt */
+      // it should be that:
+      // tstates = [4, 3];
+      // that.vcycles = T43;
+      // that.cpu_cycles = 7;
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.pc = (that.pc - 1) & 0xffff;
+          };
+        })(this);
+
+    // add, 0x80, 10000rrr
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x80] =       /* add b */
+    handler[0x81] =       /* add c */
+    handler[0x82] =       /* add d */
+    handler[0x83] =       /* add e */
+    handler[0x84] =       /* add h */
+    handler[0x85] =       /* add l */
+    handler[0x87] =       /* add a */
+
+    // adc, 0x80, 10001rrr
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x88] =       /* adc b */
+    handler[0x89] =       /* adc c */
+    handler[0x8A] =       /* adc d */
+    handler[0x8B] =       /* adc e */
+    handler[0x8C] =       /* adc h */
+    handler[0x8D] =       /* adc l */
+    handler[0x8F] =       /* adc a */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;          
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.add(r, (opcode & 0x08 ? that.cf : 0));
+          };
+        })(this);
+    handler[0x86] =       /* add m */
+    handler[0x8E] =       /* adc m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07; 
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.add(r, (opcode & 0x08 ? that.cf : 0));
+          };
+        })(this);
+
+    // sub, 0x90, 10010rrr
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x90] =       /* sub b */
+    handler[0x91] =       /* sub c */
+    handler[0x92] =       /* sub d */
+    handler[0x93] =       /* sub e */
+    handler[0x94] =       /* sub h */
+    handler[0x95] =       /* sub l */
+    handler[0x97] =       /* sub a */
+
+    // sbb, 0x98, 10010rrr
+    // rrr - b, c, d, e, h, l, m, a
+    handler[0x98] =       /* sbb b */
+    handler[0x99] =       /* sbb c */
+    handler[0x9A] =       /* sbb d */
+    handler[0x9B] =       /* sbb e */
+    handler[0x9C] =       /* sbb h */
+    handler[0x9D] =       /* sbb l */
+    handler[0x9F] =       /* sbb a */
+        (function(that) {
+            return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.sub(r, (opcode & 0x08 ? that.cf : 0));
+            };
+        })(this);
+
+    handler[0x96] =       /* sub m */
+    handler[0x9E] =       /* sbb m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.sub(r, (opcode & 0x08 ? that.cf : 0));
+          };
+        })(this);
+
+    handler[0xA0] =       /* ana b */
+    handler[0xA1] =       /* ana c */
+    handler[0xA2] =       /* ana d */
+    handler[0xA3] =       /* ana e */
+    handler[0xA4] =       /* ana h */
+    handler[0xA5] =       /* ana l */
+    handler[0xA7] =       /* ana a */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.ana(r);
+          };
+        })(this);
+
+    handler[0xA6] =       /* ana m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.ana(r);
+          };
+        })(this);
+
+    handler[0xA8] =       /* xra b */
+    handler[0xA9] =       /* xra c */
+    handler[0xAA] =       /* xra d */
+    handler[0xAB] =       /* xra e */
+    handler[0xAC] =       /* xra h */
+    handler[0xAD] =       /* xra l */
+    handler[0xAF] =       /* xra a */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.xra(r);
+          };
+        })(this);
+
+    handler[0xAE] =       /* xra m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.xra(r);
+          };
+        })(this);
+
+    handler[0xB0] =       /* ora b */
+    handler[0xB1] =       /* ora c */
+    handler[0xB2] =       /* ora d */
+    handler[0xB3] =       /* ora e */
+    handler[0xB4] =       /* ora h */
+    handler[0xB5] =       /* ora l */
+    handler[0xB7] =       /* ora a */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.ora(r);
+          };
+        })(this);
+    handler[0xB6] =       /* ora m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.ora(r);
+          };
+        })(this);
+
+    handler[0xB8] =       /* cmp b */
+    handler[0xB9] =       /* cmp c */
+    handler[0xBA] =       /* cmp d */
+    handler[0xBB] =       /* cmp e */
+    handler[0xBC] =       /* cmp h */
+    handler[0xBD] =       /* cmp l */
+    handler[0xBF] =       /* cmp a */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              that.cmp(r);
+          };
+        })(this);
+    handler[0xBE] =       /* cmp m */
+        (function(that) {
+          return function(opcode) {
+              var r = opcode & 0x07;
+              that.vcycles = T43;         
+              that.cpu_cycles = 7;
+              that.cmp(r);
+          };
+        })(this);
+
+    // rnz, rz, rnc, rc, rpo, rpe, rp, rm
+    // 0xC0, 11ccd000
+    // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
+    // d - 0 (negate) or 1.
+    handler[0xC0] =       /* rnz */
+    handler[0xC8] =       /* rz */
+    handler[0xD0] =       /* rnc */
+    handler[0xD8] =       /* rc */
+    handler[0xE0] =       /* rpo */
+    handler[0xE8] =       /* rpe */
+    handler[0xF0] =       /* rp */
+    handler[0xF8] =       /* rm */
+        (function(that) {
+          return function(opcode) {
+              const flags = [that.zf, that.cf, that.pf, that.sf];
+              const r = (opcode >> 4) & 0x03;
+              const direction = (opcode & 0x08) != 0;
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              if (flags[r] == direction) {
+                that.cpu_cycles = 11;
+                that.vcycles = T533;
+                that.ret();
+              }
+          };
+        })(this);
+
+    // pop, 0xC1, 11rr0001
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (psw)
+    handler[0xC1] =       /* pop b */
+    handler[0xD1] =       /* pop d */
+    handler[0xE1] =       /* pop h */
+    handler[0xF1] =       /* pop psw */
+        (function(that) {
+          return function(opcode) {
+              const r = (opcode & 0x30) >> 3;
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              const w16 = that.pop();
+              if (r != 6) {
+                that.set_rp(r, w16);
+              } else {
+                that.set_a(w16 >> 8);
+                that.retrieve_flags(w16 & 0xff);
+              }
+          };
+        })(this);
+
+    // jnz, jz, jnc, jc, jpo, jpe, jp, jm
+    // 0xC2, 11ccd010
+    // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
+    // d - 0 (negate) or 1.
+    handler[0xC2] =       /* jnz addr */
+    handler[0xCA] =       /* jz addr */
+    handler[0xD2] =       /* jnc addr */
+    handler[0xDA] =       /* jc addr */
+    handler[0xE2] =       /* jpo addr */
+    handler[0xEA] =       /* jpe addr */
+    handler[0xF2] =       /* jp addr */
+    handler[0xFA] =       /* jm addr */
+        (function(that) {
+          return function(opcode) {
+              const flags = [that.zf, that.cf, that.pf, that.sf];
+              const r = (opcode >> 4) & 0x03;
+              const direction = (opcode & 0x08) != 0;
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              const w16 = that.next_pc_word();
+              that.pc = flags[r] == direction ? w16 : that.pc;
+          };
+        })(this);
+
+    // jmp, 0xc3, 1100r011
+    handler[0xC3] =       /* jmp addr */
+    handler[0xCB] =       /* jmp addr, undocumented */
+        (function(that) {
+          return function() {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.pc = that.next_pc_word();
+          };
+        })(this);
+
+    // cnz, cz, cnc, cc, cpo, cpe, cp, cm
+    // 0xC4, 11ccd100
+    // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
+    // d - 0 (negate) or 1.
+    handler[0xC4] =       /* cnz addr */
+    handler[0xCC] =       /* cz addr */
+    handler[0xD4] =       /* cnc addr */
+    handler[0xDC] =       /* cc addr */
+    handler[0xE4] =       /* cpo addr */
+    handler[0xEC] =       /* cpe addr */
+    handler[0xF4] =       /* cp addr */
+    handler[0xFC] =       /* cm addr */
+        (function(that) {
+          return function(opcode) {
+              const flags = [that.zf, that.cf, that.pf, that.sf];
+              const r = (opcode >> 4) & 0x03;
+              const direction = (opcode & 0x08) != 0;
+              const w16 = that.next_pc_word();
+              that.vcycles = T533;
+              that.cpu_cycles = 11;
+              if (flags[r] == direction) {
+                that.vcycles = T53333;
+                that.cpu_cycles = 17;
+                that.call(w16);
+              }
+          };
+        })(this);
+
+    // push, 0xC5, 11rr0101
+    // rr - 00 (bc), 01 (de), 10 (hl), 11 (psw)
+    handler[0xC5] =       /* push b */
+    handler[0xD5] =       /* push d */
+    handler[0xE5] =       /* push h */
+    handler[0xF5] =       /* push psw */
+        (function(that) {
+          return function(opcode) {
+              const r = (opcode & 0x30) >> 3;
+              that.vcycles = T533;
+              that.cpu_cycles = 11;
+              const w16 = r != 6 ? that.rp(r) : (that.a() << 8) | that.store_flags();
+              that.push(w16);
+          };
+        })(this);
+
+    handler[0xC6] =       /* adi data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.add_im8(that.next_pc_byte(), 0);
+          };
+        })(this);
+
+    // rst, 0xC7, 11aaa111
+    // aaa - 000(0)-111(7), address = aaa*8 (0 to 0x38).
+    handler[0xC7] =       /* rst 0 */
+    handler[0xCF] =       /* rst 1 */
+    handler[0xD7] =       /* rst 2 */
+    handler[0xDF] =       /* rst 3 */
+    handler[0xE7] =       /* rst 4 */
+    handler[0xEF] =       /* rst 5 */
+    handler[0xF7] =       /* rst 5 */
+    handler[0xFF] =       /* rst 7 */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T533;
+              that.cpu_cycles = 11;
+              that.rst(opcode & 0x38);
+          };
+        })(this);
+
+    // ret, 0xc9, 110r1001
+    handler[0xC9] =       /* ret */
+    handler[0xD9] =       /* ret, undocumented */
+        (function(that) {
+          return function() {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.ret();
+          };
+        })(this);
+
+    // call, 0xcd, 11rr1101
+    handler[0xCD] =       /* call addr */
+    handler[0xDD] =       /* call, undocumented */
+    handler[0xED] = 
+    handler[0xFD] = 
+        (function(that) {
+          return function() {
+              that.vcycles = T53333;
+              that.cpu_cycles = 17;
+              that.call(that.next_pc_word());
+          };
+        })(this);
+
+    handler[0xCE] =       /* aci data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.add_im8(that.next_pc_byte(), that.cf);
+          };
+        })(this);
+
+    handler[0xD3] =       /* out port8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.io.output(that.next_pc_byte(), that.a());
+          };
+        })(this);
+
+    handler[0xD6] =       /* sui data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.sub_im8(that.next_pc_byte(), 0);
+          };
+        })(this);
+
+    handler[0xDB] =       /* in port8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T433;
+              that.cpu_cycles = 10;
+              that.set_a(that.io.input(that.next_pc_byte()));
+          };
+        })(this);
+
+    handler[0xDE] =       /* sbi data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.sub_im8(that.next_pc_byte(), that.cf);
+          };
+        })(this);
+
+    handler[0xE3] =       /* xthl */
+        (function(that) {
+          return function() {
+              that.vcycles = T43335;
+              that.cpu_cycles = 18;
+              const w16 = that.memory_read_word(that.sp, true);
+              that.memory_write_word(that.sp, that.hl(), true);
+              that.set_l(w16 & 0xff);
+              that.set_h(w16 >> 8);
+          };
+        })(this);
+
+    handler[0xE6] =       /* ani data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.ana_im8(that.next_pc_byte());
+          };
+        })(this);
+
+    handler[0xE9] =       /* pchl */
+        (function(that) {
+          return function() {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              that.pc = that.hl();
+          };
+        })(this);
+
+    handler[0xEB] =       /* xchg */
+        (function(that) {
+          return function() {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              var w8 = that.l();
+              that.set_l(that.e());
+              that.set_e(w8);
+              w8 = that.h();
+              that.set_h(that.d());
+              that.set_d(w8);
+          };
+        })(this);
+
+    handler[0xEE] =       /* xri data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.xra_im8(that.next_pc_byte());
+          };
+        })(this);
+
+    // di/ei, 1111c011
+    // c - 0 (di), 1 (ei)
+    handler[0xF3] =       /* di */
+    handler[0xFB] =       /* ei */
+        (function(that) {
+          return function(opcode) {
+              that.vcycles = T4;
+              that.cpu_cycles = 4;
+              if ((opcode & 0x08) != 0) {
+                that.iff_pending = 2;
+              } else {
+                that.iff = false;
+                that.io.interrupt(false);
+              }
+          };
+        })(this);
+
+    handler[0xF6] =       /* ori data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.ora_im8(that.next_pc_byte());
+          };
+        })(this);
+
+    handler[0xF9] =       /* sphl */
+        (function(that) {
+          return function() {
+              that.vcycles = T5;
+              that.cpu_cycles = 5;
+              that.sp = that.hl();
+          };
+        })(this);
+
+    handler[0xFE] =       /* cpi data8 */
+        (function(that) {
+          return function() {
+              that.vcycles = T43;
+              that.cpu_cycles = 7;
+              that.cmp_im8(that.next_pc_byte());
+          };
+        })(this);
+
+      // mov, 0x40, 01dddsss
+      // ddd, sss - b, c, d, e, h, l, m, a
+      //            0  1  2  3  4  5  6  7
+      handler[0x40] =       /* mov b, b */
+      handler[0x41] =       /* mov b, c */
+      handler[0x42] =       /* mov b, d */
+      handler[0x43] =       /* mov b, e */
+      handler[0x44] =       /* mov b, h */
+      handler[0x45] =       /* mov b, l */
+      handler[0x46] =       /* mov b, m */
+      handler[0x47] =       /* mov b, a */
+      handler[0x48] =       /* mov c, b */
+      handler[0x49] =       /* mov c, c */
+      handler[0x4A] =       /* mov c, d */
+      handler[0x4B] =       /* mov c, e */
+      handler[0x4C] =       /* mov c, h */
+      handler[0x4D] =       /* mov c, l */
+      handler[0x4E] =       /* mov c, m */
+      handler[0x4F] =       /* mov c, a */
+      handler[0x50] =       /* mov d, b */
+      handler[0x51] =       /* mov d, c */
+      handler[0x52] =       /* mov d, d */
+      handler[0x53] =       /* mov d, e */
+      handler[0x54] =       /* mov d, h */
+      handler[0x55] =       /* mov d, l */
+      handler[0x56] =       /* mov d, m */
+      handler[0x57] =       /* mov d, a */
+      handler[0x58] =       /* mov e, b */
+      handler[0x59] =       /* mov e, c */
+      handler[0x5A] =       /* mov e, d */
+      handler[0x5B] =       /* mov e, e */
+      handler[0x5C] =       /* mov e, h */
+      handler[0x5D] =       /* mov e, l */
+      handler[0x5E] =       /* mov e, m */
+      handler[0x5F] =       /* mov e, a */
+      handler[0x60] =       /* mov h, b */
+      handler[0x61] =       /* mov h, c */
+      handler[0x62] =       /* mov h, d */
+      handler[0x63] =       /* mov h, e */
+      handler[0x64] =       /* mov h, h */
+      handler[0x65] =       /* mov h, l */
+      handler[0x66] =       /* mov h, m */
+      handler[0x67] =       /* mov h, a */
+      handler[0x68] =       /* mov l, b */
+      handler[0x69] =       /* mov l, c */
+      handler[0x6A] =       /* mov l, d */
+      handler[0x6B] =       /* mov l, e */
+      handler[0x6C] =       /* mov l, h */
+      handler[0x6D] =       /* mov l, l */
+      handler[0x6E] =       /* mov l, m */
+      handler[0x6F] =       /* mov l, a */
+      handler[0x70] =       /* mov m, b */
+      handler[0x71] =       /* mov m, c */
+      handler[0x72] =       /* mov m, d */
+      handler[0x73] =       /* mov m, e */
+      handler[0x74] =       /* mov m, h */
+      handler[0x75] =       /* mov m, l */
+      handler[0x77] =       /* mov m, a */
+      handler[0x78] =       /* mov a, b */
+      handler[0x79] =       /* mov a, c */
+      handler[0x7A] =       /* mov a, d */
+      handler[0x7B] =       /* mov a, e */
+      handler[0x7C] =       /* mov a, h */
+      handler[0x7D] =       /* mov a, l */
+      handler[0x7E] =       /* mov a, m */
+      handler[0x7F] =       /* mov a, a */
+        (function(that) {
+            return function(opcode) {
+                const src = opcode & 7;
+                const dst = (opcode >> 3) & 7;
+                if (src == 6 || dst == 6) {
+                    that.vcycles = T43;
+                    that.cpu_cycles = 7;
+                } else {
+                    that.vcycles = T5;
+                    that.cpu_cycles = (src == 6 || dst == 6 ? 7 : 5);
+                }
+                that.set_reg(dst, that.reg(src));
+            };
+        })(this);
+
+    this.handler = handler;
+};
+
 I8080.prototype.execute = function(opcode) {
-  var cpu_cycles = -1;
-  var tstates;
-  var vcycles;
-  var r, w8, w16, direction, flags;
-
-  this.last_opcode = opcode;
-  var movtest = opcode & 0xf0;
-  if (opcode != 0x76 && (movtest == 0x40 || movtest == 0x50 || 
-    movtest == 0x60 || movtest == 0x70)) {
-    // mov, 0x40, 01dddsss
-    // ddd, sss - b, c, d, e, h, l, m, a
-    //            0  1  2  3  4  5  6  7
-        src = opcode & 7;
-        dst = (opcode >> 3) & 7;
-        if (src == 6 || dst == 6) {
-            //tstates = [4, 3];
-            vcycles = T43;
-            cpu_cycles = 7;
-        } else {
-            //tstates = [5];
-            vcycles = T5;
-            cpu_cycles = (src == 6 || dst == 6 ? 7 : 5);
-        }
-        this.set_reg(dst, this.reg(src));
-  } else {
-    switch (opcode) {
-      default:
+    this.last_opcode = opcode;
+    const h = this.handler[opcode];
+    if (h) {
+        h(opcode);
+    } else {
         alert("Oops! Unhandled opcode " + opcode.toString(16));
-        break;
-
-      // nop, 0x00, 00rrr000
-      // r - 000(0) to 111(7)
-      case 0x00:            /* nop */
-      // Undocumented NOP.
-      case 0x08:            /* nop */
-      case 0x10:            /* nop */
-      case 0x18:            /* nop */
-      case 0x20:            /* nop */
-      case 0x28:            /* nop */
-      case 0x30:            /* nop */
-      case 0x38:            /* nop */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          break;
-
-      // lxi, 0x01, 00rr0001
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
-      case 0x01:            /* lxi b, data16 */
-      case 0x11:            /* lxi d, data16 */
-      case 0x21:            /* lxi h, data16 */
-      case 0x31:            /* lxi sp, data16 */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.set_rp(opcode >> 3, this.next_pc_word());
-          break;
-
-      // stax, 0x02, 000r0010
-      // r - 0 (bc), 1 (de)
-      case 0x02:            /* stax b */
-      case 0x12:            /* stax d */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.memory_write_byte(this.rp(opcode >> 3), this.a());
-          break;
-
-      // inx, 0x03, 00rr0011
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
-      case 0x03:            /* inx b */
-      case 0x13:            /* inx d */
-      case 0x23:            /* inx h */
-      case 0x33:            /* inx sp */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          var r = opcode >> 3;
-          this.set_rp(r, (this.rp(r) + 1) & 0xffff);
-          break;
-
-      // inr, 0x04, 00rrr100
-      // rrr - b, c, d, e, h, l, m, a
-      case 0x04:            /* inr b */
-      case 0x0C:            /* inr c */
-      case 0x14:            /* inr d */
-      case 0x1C:            /* inr e */
-      case 0x24:            /* inr h */
-      case 0x2C:            /* inr l */
-      case 0x3C:            /* inr a */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          this.inr(opcode >> 3);
-          break;
-      case 0x34:            /* inr m */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.inr(opcode >> 3);
-          break;
-
-      // dcr, 0x05, 00rrr100
-      // rrr - b, c, d, e, h, l, m, a
-      case 0x05:            /* dcr b */
-      case 0x0D:            /* dcr c */
-      case 0x15:            /* dcr d */
-      case 0x1D:            /* dcr e */
-      case 0x25:            /* dcr h */
-      case 0x2D:            /* dcr l */
-      case 0x3D:            /* dcr a */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          this.dcr(opcode >> 3);
-          break;
-      case 0x35:            /* dcr m */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.dcr(opcode >> 3);
-          break;
-
-      // mvi, 0x06, 00rrr110
-      // rrr - b, c, d, e, h, l, m, a
-      case 0x06:            /* mvi b, data8 */
-      case 0x0E:            /* mvi c, data8 */
-      case 0x16:            /* mvi d, data8 */
-      case 0x1E:            /* mvi e, data8 */
-      case 0x26:            /* mvi h, data8 */
-      case 0x2E:            /* mvi l, data8 */
-      case 0x3E:            /* mvi a, data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.set_reg(opcode >> 3, this.next_pc_byte());
-          break;
-
-      case 0x36:            /* mvi m, data8 */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.set_reg(opcode >> 3, this.next_pc_byte());
-          break;
-
-      case 0x07:            /* rlc */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          a = this.a();
-          this.cf = ((a & 0x80) != 0);
-          this.set_a(((a << 1) & 0xff) | this.cf);
-          break;
-
-      // dad, 0x09, 00rr1001
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
-      case 0x09:            /* dad b */
-      case 0x19:            /* dad d */
-      case 0x29:            /* dad hl */
-      case 0x39:            /* dad sp */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.dad((opcode & 0x30) >> 3);
-          break;
-
-      // ldax, 0x0A, 000r1010
-      // r - 0 (bc), 1 (de)
-      case 0x0A:            /* ldax b */
-      case 0x1A:            /* ldax d */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          var r = (opcode & 0x10) >> 3;
-          this.set_a(this.memory_read_byte(this.rp(r)));
-          break;
-
-      // dcx, 0x0B, 00rr1011
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (sp)
-      case 0x0B:            /* dcx b */
-      case 0x1B:            /* dcx d */
-      case 0x2B:            /* dcx h */
-      case 0x3B:            /* dcx sp */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          var r = (opcode & 0x30) >> 3;
-          this.set_rp(r, (this.rp(r) - 1) & 0xffff);
-          break;
-
-      case 0x0F:            /* rrc */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.cf = this.a() & 0x01;
-          this.set_a((this.a() >> 1) | (this.cf << 7));
-          break;
-
-      case 0x17:            /* ral */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          w8 = this.cf;
-          this.cf = ((this.a() & 0x80) != 0);
-          this.set_a((this.a() << 1) | w8);
-          break;
-
-      case 0x1F:             /* rar */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          w8 = this.cf;
-          this.cf = this.a() & 0x01;
-          this.set_a((this.a() >> 1) | (w8 << 7));
-          break;
-
-      case 0x22:            /* shld addr */
-          //tstates = [4, 3, 3, 3, 3];
-          vcycles = T43333;
-          cpu_cycles = 16;
-          w16 = this.next_pc_word();
-          this.memory_write_byte(w16, this.l());
-          this.memory_write_byte(w16 + 1, this.h());
-          break;
-
-      case 0x27:            /* daa */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          var carry = this.cf;
-          var add = 0;
-          var a = this.a();
-          if (this.hf || (a & 0x0f) > 9) add = 0x06;
-          if (this.cf || (a >> 4) > 9 || ((a >> 4) >= 9 && (a & 0xf) > 9)) {
-              add |= 0x60;
-              carry = 1;
-          }
-          this.add_im8(add, 0);
-          this.pf = I8080.prototype.parity_table[this.a()];
-          this.cf = carry;
-          break;
-
-      case 0x2A:            /* lhld addr */
-          //tstates = [4, 3, 3, 3, 3];
-          vcycles = T43333;
-          cpu_cycles = 16;
-          var w16 = this.next_pc_word();
-          this.regs[5] = this.memory_read_byte(w16);
-          this.regs[4] = this.memory_read_byte(w16 + 1);
-          break;
-
-      case 0x2F:            /* cma */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.set_a(this.a() ^ 0xff);
-          break;
-
-      case 0x32:            /* sta addr */
-          //tstates = [4, 3, 3, 3];
-          vcycles = T4333;
-          cpu_cycles = 13;
-          this.memory_write_byte(this.next_pc_word(), this.a());
-          break;
-
-      case 0x37:            /* stc */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.cf = 1;
-          break;
-
-      case 0x3A:            /* lda addr */
-          //tstates = [4, 3, 3, 3];
-          vcycles = T4333;
-          cpu_cycles = 13;
-          this.set_a(this.memory_read_byte(this.next_pc_word()));
-          break;
-
-      case 0x3F:            /* cmc */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.cf = !this.cf;
-          break;
-      // mov group moved out of the switch
-
-      case 0x76:            /* hlt */
-          // it should be this:
-          // tstates = [4, 3];
-          // vcycles = T43;
-          // cpu_cycles = 7;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.pc = (this.pc - 1) & 0xffff;
-          break;
-
-     // add, 0x80, 10000rrr
-     // rrr - b, c, d, e, h, l, m, a
-      case 0x80:            /* add b */
-      case 0x81:            /* add c */
-      case 0x82:            /* add d */
-      case 0x83:            /* add e */
-      case 0x84:            /* add h */
-      case 0x85:            /* add l */
-      case 0x87:            /* add a */
-
-      // adc, 0x80, 10001rrr
-      // rrr - b, c, d, e, h, l, m, a
-      case 0x88:            /* adc b */
-      case 0x89:            /* adc c */
-      case 0x8A:            /* adc d */
-      case 0x8B:            /* adc e */
-      case 0x8C:            /* adc h */
-      case 0x8D:            /* adc l */
-      case 0x8F:            /* adc a */
-          r = opcode & 0x07;          
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.add(r, (opcode & 0x08 ? this.cf : 0));
-          break
-      case 0x86:            /* add m */
-      case 0x8E:            /* adc m */
-          r = opcode & 0x07; 
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.add(r, (opcode & 0x08 ? this.cf : 0));
-          break
-
-     // sub, 0x90, 10010rrr
-     // rrr - b, c, d, e, h, l, m, a
-      case 0x90:            /* sub b */
-      case 0x91:            /* sub c */
-      case 0x92:            /* sub d */
-      case 0x93:            /* sub e */
-      case 0x94:            /* sub h */
-      case 0x95:            /* sub l */
-      case 0x97:            /* sub a */
-
-     // sbb, 0x98, 10010rrr
-     // rrr - b, c, d, e, h, l, m, a
-      case 0x98:            /* sbb b */
-      case 0x99:            /* sbb c */
-      case 0x9A:            /* sbb d */
-      case 0x9B:            /* sbb e */
-      case 0x9C:            /* sbb h */
-      case 0x9D:            /* sbb l */
-      case 0x9F:            /* sbb a */
-          r = opcode & 0x07;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.sub(r, (opcode & 0x08 ? this.cf : 0));
-          break;
-
-      case 0x96:            /* sub m */
-      case 0x9E:            /* sbb m */
-          r = opcode & 0x07;
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.sub(r, (opcode & 0x08 ? this.cf : 0));
-          break;
-
-      case 0xA0:            /* ana b */
-      case 0xA1:            /* ana c */
-      case 0xA2:            /* ana d */
-      case 0xA3:            /* ana e */
-      case 0xA4:            /* ana h */
-      case 0xA5:            /* ana l */
-      case 0xA7:            /* ana a */
-          r = opcode & 0x07;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.ana(r);
-          break;
-
-      case 0xA6:            /* ana m */
-          r = opcode & 0x07;
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.ana(r);
-          break;
-
-      case 0xA8:            /* xra b */
-      case 0xA9:            /* xra c */
-      case 0xAA:            /* xra d */
-      case 0xAB:            /* xra e */
-      case 0xAC:            /* xra h */
-      case 0xAD:            /* xra l */
-      case 0xAF:            /* xra a */
-          r = opcode & 0x07;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.xra(r);
-          break;
-
-      case 0xAE:            /* xra m */
-          r = opcode & 0x07;
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.xra(r);
-          break;
-
-      case 0xB0:            /* ora b */
-      case 0xB1:            /* ora c */
-      case 0xB2:            /* ora d */
-      case 0xB3:            /* ora e */
-      case 0xB4:            /* ora h */
-      case 0xB5:            /* ora l */
-      case 0xB7:            /* ora a */
-          r = opcode & 0x07;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.ora(r);
-          break;
-      case 0xB6:            /* ora m */
-          r = opcode & 0x07;
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.ora(r);
-          break;
-
-      case 0xB8:            /* cmp b */
-      case 0xB9:            /* cmp c */
-      case 0xBA:            /* cmp d */
-      case 0xBB:            /* cmp e */
-      case 0xBC:            /* cmp h */
-      case 0xBD:            /* cmp l */
-      case 0xBF:            /* cmp a */
-          r = opcode & 0x07;
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          this.cmp(r);
-          break;
-      case 0xBE:            /* cmp m */
-          r = opcode & 0x07;
-          //tstates = [4, 3];
-          vcycles = T43;         
-          cpu_cycles = 7;
-          this.cmp(r);
-          break;
-
-      // rnz, rz, rnc, rc, rpo, rpe, rp, rm
-      // 0xC0, 11ccd000
-      // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
-      // d - 0 (negate) or 1.
-      case 0xC0:            /* rnz */
-      case 0xC8:            /* rz */
-      case 0xD0:            /* rnc */
-      case 0xD8:            /* rc */
-      case 0xE0:            /* rpo */
-      case 0xE8:            /* rpe */
-      case 0xF0:            /* rp */
-      case 0xF8:            /* rm */
-          flags = [this.zf, this.cf, this.pf, this.sf];
-          r = (opcode >> 4) & 0x03;
-          direction = (opcode & 0x08) != 0;
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          if (flags[r] == direction) {
-            cpu_cycles = 11;
-            //tstates = [5, 3, 3];
-            vcycles = T533;
-            this.ret();
-          }
-          break;
-
-      // pop, 0xC1, 11rr0001
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (psw)
-      case 0xC1:            /* pop b */
-      case 0xD1:            /* pop d */
-      case 0xE1:            /* pop h */
-      case 0xF1:            /* pop psw */
-          r = (opcode & 0x30) >> 3;
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          w16 = this.pop();
-          if (r != 6) {
-            this.set_rp(r, w16);
-          } else {
-            this.set_a(w16 >> 8);
-            this.retrieve_flags(w16 & 0xff);
-          }
-          break;
-
-      // jnz, jz, jnc, jc, jpo, jpe, jp, jm
-      // 0xC2, 11ccd010
-      // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
-      // d - 0 (negate) or 1.
-      case 0xC2:            /* jnz addr */
-      case 0xCA:            /* jz addr */
-      case 0xD2:            /* jnc addr */
-      case 0xDA:            /* jc addr */
-      case 0xE2:            /* jpo addr */
-      case 0xEA:            /* jpe addr */
-      case 0xF2:            /* jp addr */
-      case 0xFA:            /* jm addr */
-          flags = [this.zf, this.cf, this.pf, this.sf];
-          r = (opcode >> 4) & 0x03;
-          direction = (opcode & 0x08) != 0;
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          w16 = this.next_pc_word();
-          this.pc = flags[r] == direction ? w16 : this.pc;
-          break;
-
-      // jmp, 0xc3, 1100r011
-      case 0xC3:            /* jmp addr */
-      case 0xCB:            /* jmp addr, undocumented */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.pc = this.next_pc_word();
-          break;
-
-      // cnz, cz, cnc, cc, cpo, cpe, cp, cm
-      // 0xC4, 11ccd100
-      // cc - 00 (zf), 01 (cf), 10 (pf), 11 (sf)
-      // d - 0 (negate) or 1.
-      case 0xC4:            /* cnz addr */
-      case 0xCC:            /* cz addr */
-      case 0xD4:            /* cnc addr */
-      case 0xDC:            /* cc addr */
-      case 0xE4:            /* cpo addr */
-      case 0xEC:            /* cpe addr */
-      case 0xF4:            /* cp addr */
-      case 0xFC:            /* cm addr */
-          flags = [this.zf, this.cf, this.pf, this.sf];
-          r = (opcode >> 4) & 0x03;
-          direction = (opcode & 0x08) != 0;
-          w16 = this.next_pc_word();
-          //tstates = [5, 3, 3];
-          vcycles = T533;
-          cpu_cycles = 11;
-          if (flags[r] == direction) {
-            //tstates = [5, 3, 3, 3, 3];
-            vcycles = T53333;
-            cpu_cycles = 17;
-            this.call(w16);
-          }
-          break;
-
-      // push, 0xC5, 11rr0101
-      // rr - 00 (bc), 01 (de), 10 (hl), 11 (psw)
-      case 0xC5:            /* push b */
-      case 0xD5:            /* push d */
-      case 0xE5:            /* push h */
-      case 0xF5:            /* push psw */
-          r = (opcode & 0x30) >> 3;
-          //tstates = [5, 3, 3];
-          vcycles = T533;
-          cpu_cycles = 11;
-          w16 = r != 6 ? this.rp(r) : (this.a() << 8) | this.store_flags();
-          this.push(w16);
-          break;
-
-      case 0xC6:            /* adi data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.add_im8(this.next_pc_byte(), 0);
-          break;
-
-      // rst, 0xC7, 11aaa111
-      // aaa - 000(0)-111(7), address = aaa*8 (0 to 0x38).
-      case 0xC7:            /* rst 0 */
-      case 0xCF:            /* rst 1 */
-      case 0xD7:            /* rst 2 */
-      case 0xDF:            /* rst 3 */
-      case 0xE7:            /* rst 4 */
-      case 0xEF:            /* rst 5 */
-      case 0xF7:            /* rst 5 */
-      case 0xFF:            /* rst 7 */
-          //tstates = [5, 3, 3];
-          vcycles = T533;
-          cpu_cycles = 11;
-          this.rst(opcode & 0x38);
-          break;
-
-      // ret, 0xc9, 110r1001
-      case 0xC9:            /* ret */
-      case 0xD9:            /* ret, undocumented */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.ret();
-          break;
-
-      // call, 0xcd, 11rr1101
-      case 0xCD:            /* call addr */
-      case 0xDD:            /* call, undocumented */
-      case 0xED:
-      case 0xFD:
-          //tstates = [5, 3, 3, 3, 3];
-          vcycles = T53333;
-          cpu_cycles = 17;
-          this.call(this.next_pc_word());
-          break;
-
-      case 0xCE:            /* aci data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.add_im8(this.next_pc_byte(), this.cf);
-          break;
-
-      case 0xD3:            /* out port8 */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.io.output(this.next_pc_byte(), this.a());
-          break;
-
-      case 0xD6:            /* sui data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.sub_im8(this.next_pc_byte(), 0);
-          break;
-
-      case 0xDB:            /* in port8 */
-          //tstates = [4, 3, 3];
-          vcycles = T433;
-          cpu_cycles = 10;
-          this.set_a(this.io.input(this.next_pc_byte()));
-          break;
-
-      case 0xDE:            /* sbi data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.sub_im8(this.next_pc_byte(), this.cf);
-          break;
-
-      case 0xE3:            /* xthl */
-          //tstates = [4, 3, 3, 3, 5];
-          vcycles = T43335;
-          cpu_cycles = 18;
-          w16 = this.memory_read_word(this.sp, true);
-          this.memory_write_word(this.sp, this.hl(), true);
-          this.set_l(w16 & 0xff);
-          this.set_h(w16 >> 8);
-          break;
-
-      case 0xE6:            /* ani data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.ana_im8(this.next_pc_byte());
-          break;
-
-      case 0xE9:            /* pchl */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          this.pc = this.hl();
-          break;
-
-      case 0xEB:            /* xchg */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          w8 = this.l();
-          this.set_l(this.e());
-          this.set_e(w8);
-          w8 = this.h();
-          this.set_h(this.d());
-          this.set_d(w8);
-          break;
-
-      case 0xEE:            /* xri data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.xra_im8(this.next_pc_byte());
-          break;
-
-      // di/ei, 1111c011
-      // c - 0 (di), 1 (ei)
-      case 0xF3:            /* di */
-      case 0xFB:            /* ei */
-          //tstates = [4];
-          vcycles = T4;
-          cpu_cycles = 4;
-          if ((opcode & 0x08) != 0) {
-            this.iff_pending = 2;
-          } else {
-            this.iff = false;
-            this.io.interrupt(false);
-          }
-          break;
-
-      case 0xF6:            /* ori data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.ora_im8(this.next_pc_byte());
-          break;
-
-      case 0xF9:            /* sphl */
-          //tstates = [5];
-          vcycles = T5;
-          cpu_cycles = 5;
-          this.sp = this.hl();
-          break;
-
-      case 0xFE:            /* cpi data8 */
-          //tstates = [4, 3];
-          vcycles = T43;
-          cpu_cycles = 7;
-          this.cmp_im8(this.next_pc_byte());
-          break;
     }
-  }
-  if (this.iff_pending !== 0) {
-    if (--this.iff_pending === 0) {
-      this.iff = true;
-      this.io.interrupt(true);
+    if (this.iff_pending !== 0) {
+        if (--this.iff_pending === 0) {
+          this.iff = true;
+          this.io.interrupt(true);
+        }
     }
-  }
-  //this.tstates = tstates;
-  this.vcycles = vcycles;
-  return cpu_cycles;
+    return this.cpu_cycles;
 }
 
 I8080.prototype.instruction = function() {
