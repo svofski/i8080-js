@@ -52,7 +52,7 @@ var I8080_trace = function(i8080) {
   for (var i = 0; i < 3; ++i)
     code[code.length] = i8080.memory.read(i8080.pc + i);
 
-  var instr = i8080_disasm(code);
+  var instr = I8080_disasm(code);
   r += this.hex(i8080.pc, 4) + " " + instr.text;
   r += "\n";
 

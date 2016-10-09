@@ -38,7 +38,7 @@ run-js:
 	js -f all.js
 
 run-node:
-	type \
+	cat \
 		files.js i8080.js i8080_disasm.js i8080_trace.js \
 		i8080_test.js main.js > all.js
 	node all.js
